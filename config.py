@@ -1,6 +1,9 @@
 """Environment-driven configuration for the RAG backend."""
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env file
 
 # ── Paths ──────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent

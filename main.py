@@ -40,8 +40,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -75,11 +75,14 @@ async def chat(req: ChatRequest):
             detail="No documents ingested. Upload PDFs first via /api/upload.",
         )
 
-    answer, evidence_rows = engine.generate(
-        query=req.query,
-        k=req.k,
-        method=req.method,
-    )
+    try:
+        answer, evidence_rows = engine.generate(
+            query=req.query,
+            k=req.k,
+            method=req.method,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM error: {e}")
 
     evidence = []
     for _, r in evidence_rows.iterrows():

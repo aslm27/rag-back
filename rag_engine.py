@@ -259,24 +259,24 @@ class RAGEngine:
         store_dir = Path(VECTOR_STORE_DIR)
 
         # Load embedder
-        print("[rag] Loading embedding model…")
+        print("[rag] Loading embedding model...")
         self.embedder = EmbeddingModel()
         print(f"[rag] Embedding backend: {self.embedder.backend} | dim={self.embedder.dim}")
 
         # Load FAISS index
         index_path = store_dir / "index.faiss"
         if index_path.exists():
-            print("[rag] Loading FAISS index…")
+            print("[rag] Loading FAISS index...")
             self.vector_index = faiss.read_index(str(index_path))
             print(f"[rag] FAISS index: {self.vector_index.ntotal} vectors")
         else:
-            print("[rag] No FAISS index found — will build on first ingestion.")
+            print("[rag] No FAISS index found -- will build on first ingestion.")
             self.vector_index = None
 
         # Load metadata
         meta_path = store_dir / "metadata.json"
         if meta_path.exists():
-            print("[rag] Loading metadata…")
+            print("[rag] Loading metadata...")
             self.metadata_df = pd.read_json(meta_path)
             print(f"[rag] {len(self.metadata_df)} chunks loaded")
         else:
@@ -285,7 +285,7 @@ class RAGEngine:
 
         # Build BM25 index
         if self.metadata_df is not None and len(self.metadata_df) > 0:
-            print("[rag] Building BM25 index…")
+            print("[rag] Building BM25 index...")
             self.bm25_index = build_bm25(self.metadata_df)
         else:
             self.bm25_index = None
@@ -295,11 +295,11 @@ class RAGEngine:
             self.llm_client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
             print(f"[rag] LLM client ready ({LLM_MODEL} via {LLM_BASE_URL})")
         else:
-            print("[warn] No LLM_API_KEY set — chat will return retrieval-only results.")
+            print("[warn] No LLM_API_KEY set -- chat will return retrieval-only results.")
             self.llm_client = None
 
         self.loaded = True
-        print("[rag] ✅ Engine ready.")
+        print("[rag] Engine ready.")
 
     def search(
         self,
