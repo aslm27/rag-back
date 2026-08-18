@@ -1,5 +1,5 @@
 """Pydantic models for the API request/response schemas."""
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import Literal, Optional
 
 
@@ -81,3 +81,32 @@ class HealthResponse(BaseModel):
     total_documents: int
     embedding_backend: str
     index_loaded: bool
+
+
+class RegisterRequest(BaseModel):
+    """Incoming registration payload."""
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: Optional[str] = Field(default=None, max_length=200)
+
+
+class LoginRequest(BaseModel):
+    """Incoming login payload."""
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class UserProfile(BaseModel):
+    """Safe user profile returned to clients."""
+    id: str
+    email: str
+    full_name: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class AuthResponse(BaseModel):
+    """Token + user profile response."""
+    access_token: str
+    token_type: str = "bearer"
+    user: UserProfile
