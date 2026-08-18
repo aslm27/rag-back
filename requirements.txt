@@ -10,6 +10,7 @@ openai==1.*
 python-multipart==0.0.*
 pydantic==2.*
 python-dotenv==1.*
+requests>=2.31,<3
 psycopg2-binary==2.9.*
 passlib[bcrypt]==1.7.*
 PyJWT==2.*
