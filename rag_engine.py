@@ -240,6 +240,37 @@ def safe_parse_grounded(raw: str, evidence_rows: pd.DataFrame | None = None, met
     )
 
 
+def validate_grounded_answer(answer: GroundedAnswer, evidence_rows: pd.DataFrame) -> GroundedAnswer:
+    """Enforce that model citations point only to retrieved evidence.
+
+    Invalid citations are removed. A non-empty recommendation without any
+    remaining citation is converted into a safe refusal so the API never
+    returns an apparently grounded answer without provenance.
+    """
+    allowed = {}
+    if evidence_rows is not None and len(evidence_rows):
+        allowed = {str(row["chunk_id"]): row for _, row in evidence_rows.iterrows()}
+    valid_citations = []
+    for citation in answer.citations:
+        row = allowed.get(citation.chunk_id)
+        if row is None:
+            continue
+        quote = citation.quote.strip()
+        text = str(row.get("text", ""))
+        if quote and quote not in text:
+            continue
+        valid_citations.append(citation)
+    answer.citations = valid_citations
+    if answer.recommendation.strip() and not valid_citations:
+        answer.recommendation = ""
+        answer.supporting_evidence = []
+        answer.confidence = "Insufficient Evidence"
+        answer.refusal_reason = "The generated answer did not contain a valid citation to retrieved evidence."
+    if answer.confidence == "Insufficient Evidence" and not answer.refusal_reason:
+        answer.refusal_reason = "The available evidence is insufficient to provide a grounded answer."
+    return answer
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  RAG Engine (stateful)
 # ═══════════════════════════════════════════════════════════════════════
@@ -336,17 +367,21 @@ class RAGEngine:
         query: str,
         k: int = 5,
         method: str = "hybrid",
+        rows_override: pd.DataFrame | None = None,
     ) -> tuple[GroundedAnswer, pd.DataFrame]:
         """Full RAG pipeline: retrieve → build context → LLM → parse."""
-        # 1. Retrieve
-        ids, scores = self.search(query, k, method)
-        rows = (
-            self.metadata_df[self.metadata_df["chunk_id"].isin(ids)]
-            .set_index("chunk_id")
-            .loc[ids]
-            .reset_index()
-        )
-        rows["similarity_score"] = scores
+        # 1. Retrieve, unless the API already performed a project-scoped search.
+        if rows_override is not None:
+            rows = rows_override.copy()
+        else:
+            ids, scores = self.search(query, k, method)
+            rows = (
+                self.metadata_df[self.metadata_df["chunk_id"].isin(ids)]
+                .set_index("chunk_id")
+                .loc[ids]
+                .reset_index()
+            )
+            rows["similarity_score"] = scores
 
         # 2. Confidence gate
         max_score = float(rows["similarity_score"].max()) if len(rows) else 0.0
