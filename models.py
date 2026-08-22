@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 Confidence = Literal["High", "Medium", "Low", "Insufficient Evidence"]
@@ -157,6 +157,31 @@ class EvaluationResponse(BaseModel):
 class MessageResponse(ChatResponse):
     conversation_id: str
     message_id: str
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: Optional[str] = Field(default=None, max_length=200)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class UserProfile(BaseModel):
+    id: str
+    email: str
+    full_name: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserProfile
 
 
 class HealthResponse(BaseModel):

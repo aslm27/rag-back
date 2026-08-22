@@ -10,7 +10,8 @@ from typing import Any
 
 import faiss
 import pandas as pd
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+import psycopg2
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -20,11 +21,13 @@ from config import (
     DEFAULT_SEARCH_METHOD,
     RAW_PDFS_DIR,
     SIMILARITY_THRESHOLD,
+    SUPABASE_DB_URL,
     TOPIC,
     VECTOR_STORE_DIR,
 )
-from db import new_id, store, utcnow
+from db import close_db_pool, init_db_pool, new_id, store, utcnow
 from models import (
+    AuthResponse,
     ChatRequest,
     ChatResponse,
     ConversationMessageRequest,
@@ -43,10 +46,22 @@ from models import (
     ProjectCreate,
     ProjectDocument,
     ReadyResponse,
+    LoginRequest,
+    RegisterRequest,
+    UserProfile,
     RetrieveRequest,
     RetrieveResponse,
 )
 from rag_engine import build_bm25, engine, validate_grounded_answer
+from auth import (
+    create_access_token,
+    create_user,
+    get_current_user,
+    get_user_by_email,
+    get_user_with_password,
+    hash_password,
+    verify_password,
+)
 
 
 API_KEY = os.getenv("API_KEY", "")
@@ -64,10 +79,15 @@ def require_auth(credentials: HTTPAuthorizationCredentials | None = Depends(bear
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if SUPABASE_DB_URL:
+        init_db_pool()
     RAW_PDFS_DIR.mkdir(parents=True, exist_ok=True)
     VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
     engine.load()
-    yield
+    try:
+        yield
+    finally:
+        close_db_pool()
 
 
 app = FastAPI(
@@ -83,6 +103,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.post("/auth/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+async def register(req: RegisterRequest) -> AuthResponse:
+    if not SUPABASE_DB_URL:
+        raise HTTPException(status_code=503, detail="SUPABASE_DB_URL is not configured.")
+    email = str(req.email).strip().lower()
+    full_name = req.full_name.strip() if req.full_name else None
+    if get_user_by_email(email) is not None:
+        raise HTTPException(status_code=409, detail="Email is already registered.")
+    try:
+        user = create_user(email=email, hashed_password=hash_password(req.password), full_name=full_name)
+    except psycopg2.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="Email is already registered.") from exc
+    return AuthResponse(access_token=create_access_token(user_id=user.id, email=user.email), user=user)
+
+
+@app.post("/auth/login", response_model=AuthResponse)
+async def login(req: LoginRequest) -> AuthResponse:
+    if not SUPABASE_DB_URL:
+        raise HTTPException(status_code=503, detail="SUPABASE_DB_URL is not configured.")
+    email = str(req.email).strip().lower()
+    row = get_user_with_password(email)
+    if row is None or not verify_password(req.password, str(row["hashed_password"])):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    user = UserProfile(id=str(row["id"]), email=str(row["email"]), full_name=row.get("full_name"), created_at=row["created_at"].isoformat(), updated_at=row["updated_at"].isoformat())
+    return AuthResponse(access_token=create_access_token(user_id=user.id, email=user.email), user=user)
+
+
+@app.get("/auth/me", response_model=UserProfile)
+async def me(current_user: UserProfile = Depends(get_current_user)) -> UserProfile:
+    return current_user
 
 
 def _now_dt() -> datetime:

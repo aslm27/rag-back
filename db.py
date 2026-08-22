@@ -7,6 +7,7 @@ truth for the Supabase tables.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import os
 import threading
@@ -17,7 +18,14 @@ from typing import Any
 
 import requests
 
-from config import DATA_DIR
+try:
+    from psycopg2.pool import SimpleConnectionPool
+except ImportError:  # Optional for local RAG-only development.
+    SimpleConnectionPool = None
+
+from config import DATA_DIR, SUPABASE_DB_URL
+
+_db_pool = None
 
 
 def utcnow() -> str:
@@ -143,3 +151,34 @@ class Persistence:
 
 
 store = Persistence()
+
+
+def init_db_pool() -> None:
+    """Initialize the optional direct PostgreSQL pool used by auth routes."""
+    global _db_pool
+    if _db_pool is not None:
+        return
+    if not SUPABASE_DB_URL:
+        return
+    if SimpleConnectionPool is None:
+        raise RuntimeError("psycopg2-binary is required when SUPABASE_DB_URL is configured.")
+    _db_pool = SimpleConnectionPool(minconn=1, maxconn=8, dsn=SUPABASE_DB_URL)
+
+
+def close_db_pool() -> None:
+    global _db_pool
+    if _db_pool is not None:
+        _db_pool.closeall()
+        _db_pool = None
+
+
+@contextmanager
+def get_db_connection():
+    """Yield a pooled direct PostgreSQL connection for authentication queries."""
+    if _db_pool is None:
+        raise RuntimeError("SUPABASE_DB_URL is not configured.")
+    connection = _db_pool.getconn()
+    try:
+        yield connection
+    finally:
+        _db_pool.putconn(connection)
